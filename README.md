@@ -40,14 +40,14 @@ This script automates the process of detecting the operating system and installi
 ## Usage
 ### **Run Locally**
 ```bash
-sudo ./install_app.sh
+sudo ./InstallApps
 ```
 - Enter the application name when prompted.
 - Confirm installation on the local device.
 
 ### **Run for Remote Installation**
 ```bash
-sudo ./install_app.sh
+sudo ./InstallApps
 ```
 - Enter the application name when prompted.
 - Choose **No** for local installation.

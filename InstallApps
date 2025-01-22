@@ -1,0 +1,200 @@
+#!/bin/bash
+
+# Check if the script is run as root
+if [[ $EUID -ne 0 ]]; then
+    echo "Please run the script as root or use sudo."
+    exit 1
+fi
+
+# Function to determine the operating system
+get_os_type() {
+    if [[ -f /etc/os-release ]]; then
+        . /etc/os-release
+        echo "$ID"
+    else
+        echo "unknown"
+    fi
+}
+
+get_remote_os_type(){
+ssh "$1@$2" 'source /etc/os-release && echo $ID' 2>/dev/null
+}
+# Function to find the closest package based on the OS
+find_closest_package() {
+    app_name=$1
+    os_type=$2
+
+    # List of commonly used packages
+    case $os_type in
+        centos|rhel|fedora)
+            case $app_name in
+                apache)
+                    echo "httpd"
+                    ;;
+                mysql)
+                    echo "mariadb-server"
+                    ;;
+                php)
+                    echo "php"
+                    ;;
+                nginx)
+                    echo "nginx"
+                    ;;
+                postgresql)
+                    echo "postgresql-server"
+                    ;;
+                docker)
+                    echo "docker-ce"
+                    ;;
+                redis)
+                    echo "redis"
+                    ;;
+                mongodb)
+                    echo "mongodb-org"
+                    ;;
+                git)
+                    echo "git"
+                    ;;
+                python)
+                    echo "python3"
+                    ;;
+                java)
+                    echo "java-1.8.0-openjdk"
+                    ;;
+                nodejs)
+                    echo "nodejs"
+                    ;;
+                vscode)
+                    echo "code"
+                    ;;
+                *)
+                    echo "No package found"
+                    ;;
+            esac
+            ;;
+        ubuntu|debian)
+            case $app_name in
+                apache)
+                    echo "apache2"
+                    ;;
+                mysql)
+                    echo "mysql-server"
+                    ;;
+                php)
+                    echo "php"
+                    ;;
+                nginx)
+                    echo "nginx"
+                    ;;
+                postgresql)
+                    echo "postgresql"
+                    ;;
+                docker)
+                    echo "docker"
+                    ;;
+                redis)
+                    echo "redis-server"
+                    ;;
+                mongodb)
+                    echo "mongodb"
+                    ;;
+                git)
+                    echo "git"
+                    ;;
+                python)
+                    echo "python3"
+                    ;;
+                java)
+                    echo "openjdk-8-jdk"
+                    ;;
+                nodejs)
+                    echo "nodejs"
+                    ;;
+                vscode)
+                    echo "code"
+                    ;;
+                *)
+                    echo "No package found"
+                    ;;
+            esac
+            ;;
+        *)
+            echo "Unsupported OS"
+            ;;
+    esac
+}
+
+# Prompt the user for the application name
+read -p "Enter the name of the application you want to install (e.g., apache, mysql, php, nginx, etc.): " app_name
+
+# Ask the user whether to install on this device or another one
+read -p "Do you want to install the application on this device? (yes/no): " install_here
+install_here=$(echo "$install_here" | tr '[:upper:]' '[:lower:]')
+
+if [[ "$install_here" == "yes" ]]; then
+    os_type=$(get_os_type)
+    echo "Detected OS: $os_type"
+else
+    read -p "Do you want to install the application on a remote device? (yes/no): " install_remote
+    install_remote=$(echo "$install_remote" | tr '[:upper:]' '[:lower:]')
+
+    if [[ "$install_remote" == "yes" ]]; then
+        read -p "Enter the remote device's IP address: " remote_ip
+        read -p "Enter the SSH username for the remote device: " remote_user
+         os_type=$(get_remote_os_type  "$remote_user $remote_ip")
+         if [[ -z "$os_type" ]]; then
+           echo "Unable to determine the operating System on the remote server. check the SSH details try enter manual:"
+           
+         fi
+         echo "Detected OS on remote device ($remote_ip): $os_type" 
+       # Check SSH connectivity
+        ssh -o BatchMode=yes -o ConnectTimeout=5 "$remote_user@$remote_ip"  exit
+        if [[ $? -ne 0 ]]; then
+            echo "Failed to connect to the remote device. Please check the IP, username, or SSH configuration."
+            exit 1
+        fi
+    else
+        echo "No remote device specified. Exiting."
+        exit 1
+    fi
+fi
+
+# Convert inputs to lowercase
+app_name=$(echo "$app_name" | tr '[:upper:]' '[:lower:]')
+os_type=$(echo "$os_type" | tr '[:upper:]' '[:lower:]')
+
+# Find the closest package for the OS and application
+package_name=$(find_closest_package "$app_name" "$os_type")
+
+if [[ "$package_name" == "No package found" || "$package_name" == "Unsupported OS" ]]; then
+    echo "No suitable package found for the application '$app_name' on the operating system '$os_type'."
+    exit 1
+fi
+
+if [[ "$install_here" == "yes" ]]; then
+    echo "Installing the closest match for '$app_name': $package_name on this device..."
+    if [[ "$os_type" == "centos" || "$os_type" == "rhel" || "$os_type" == "fedora" ]]; then
+        yum install -y "$package_name"
+    elif [[ "$os_type" == "ubuntu" || "$os_type" == "debian" ]]; then
+        apt update -y > /dev/null 2>&1
+        apt install -y "$package_name"
+    else
+        echo "Unsupported OS for local installation."
+        exit 1
+    fi
+else
+    echo "Installing the closest match for '$app_name': $package_name on the remote device ($remote_ip)..."
+    ssh "$remote_user@$remote_ip" "sudo bash -c '
+        if [[ \"$os_type\" == \"centos\" || \"$os_type\" == \"rhel\" || \"$os_type\" == \"fedora\" ]]; then
+            yum install -y $package_name
+        elif [[ \"$os_type\" == \"ubuntu\" || \"$os_type\" == \"debian\" ]]; then
+            apt update -y > /dev/null 2>&1
+            apt install -y $package_name
+        else
+            echo \"Unsupported OS on the remote device.\"
+            exit 1
+        fi
+    '"
+fi
+
+echo "The application '$package_name' has been installed successfully."
